@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest, setBoardPin } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
+import { gs, setBoardPin } from "@/lib/gs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -193,9 +194,9 @@ function CreateTaskDialog({
 
   const createMutation = useMutation({
     mutationFn: async (values: CreateValues) =>
-      apiRequest("POST", "/api/tasks", values),
+      gs("createTask", values),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast({ title: "Задачу додано" });
       form.reset({
         block: block as CreateValues["block"],
@@ -320,15 +321,16 @@ function TaskDetailDialog({
   const taskId = task?.id;
 
   const { data: taskNotes, isLoading: notesLoading } = useQuery<Note[]>({
-    queryKey: ["/api/tasks", String(taskId), "notes"],
+    queryKey: ["notes", String(taskId)],
+    queryFn: () => gs<Note[]>("listNotes", { taskId }),
     enabled: taskId != null,
   });
 
   const patchMutation = useMutation({
     mutationFn: async (patch: Record<string, string>) =>
-      apiRequest("PATCH", `/api/tasks/${taskId}`, patch),
+      gs("updateTask", { id: taskId, ...patch }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
     onError: () =>
       toast({ title: "Не вдалося оновити задачу", variant: "destructive" }),
@@ -336,13 +338,14 @@ function TaskDetailDialog({
 
   const noteMutation = useMutation({
     mutationFn: async () =>
-      apiRequest("POST", `/api/tasks/${taskId}/notes`, {
+      gs("createNote", {
+        taskId,
         author: noteAuthor || currentUser,
         text: noteText.trim(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["/api/tasks", String(taskId), "notes"],
+        queryKey: ["notes", String(taskId)],
       });
       setNoteText("");
     },
@@ -351,9 +354,9 @@ function TaskDetailDialog({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async () => apiRequest("DELETE", `/api/tasks/${taskId}`),
+    mutationFn: async () => gs("deleteTask", { id: taskId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast({ title: "Задачу видалено" });
       onClose();
     },
@@ -604,7 +607,7 @@ function LoginScreen({
     setPending(true);
     setError("");
     try {
-      await apiRequest("POST", "/api/auth", { pin });
+      await gs("auth", { pin });
       onSuccess(name, pin);
     } catch {
       setError("Невірний PIN. Спробуйте ще раз.");
@@ -726,7 +729,8 @@ function BoardContent({
   const [openedId, setOpenedId] = useState<number | null>(null);
 
   const { data: tasks, isLoading } = useQuery<Task[]>({
-    queryKey: ["/api/tasks"],
+    queryKey: ["tasks"],
+    queryFn: () => gs<Task[]>("listTasks"),
     refetchInterval: 15000,
   });
 

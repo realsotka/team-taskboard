@@ -14,39 +14,44 @@
 
 ## Стек
 
-- **Фронтенд:** React + Vite + Tailwind CSS + shadcn/ui
-- **Бекенд:** Express (Node.js)
-- **База даних:** SQLite (better-sqlite3 + Drizzle ORM) — файл `data.db` створюється автоматично
+- **Фронтенд:** React + Vite + Tailwind CSS + shadcn/ui (повністю статичний)
+- **Бекенд:** Google Apps Script (Web App) — код у `appsscript/Code.gs`
+- **База даних:** Google Таблиця «Дошка задач — дані» (аркуші Tasks і Notes, створюється автоматично при першому запиті)
+
+> У репозиторії також є старий бекенд на Express + SQLite (`server/`) — він більше не використовується фронтендом, але залишений на випадок повернення до класичного хостингу.
+
+## Налаштування бекенда (Apps Script)
+
+1. Створіть проєкт на [script.google.com](https://script.google.com), вставте код із `appsscript/Code.gs`
+2. Deploy → New deployment → Web app → Execute as: **Me**, Who has access: **Anyone**
+3. Скопіюйте URL веб-додатка (`.../exec`) і запишіть у `client/.env`:
+
+```bash
+VITE_GS_API_URL=https://script.google.com/macros/s/XXXX/exec
+```
+
+Таблиця з даними створиться автоматично в Google Диску власника скрипта при першому запиті.
 
 ## Запуск локально
 
 ```bash
 npm install
+cp client/.env.example client/.env   # вписати свій VITE_GS_API_URL
 npm run dev
 # відкрити http://localhost:5000
 ```
 
-## Продакшн
+## Збірка
 
 ```bash
 npm run build
-NODE_ENV=production node dist/index.cjs
+# статичний сайт — у dist/public
 ```
 
 ## PIN-код
 
-За замовчуванням PIN — `2026`. Змінити можна через змінну оточення:
-
-```bash
-BOARD_PIN=1234 node dist/index.cjs
-```
+PIN задається константою `PIN` на початку `appsscript/Code.gs` (за замовчуванням `2026`). Після зміни — зберегти скрипт і зробити Deploy → Manage deployments → Edit → New version.
 
 ## Хостинг
 
-Застосунок має бекенд і базу даних, тому **GitHub Pages не підходить** (він лише для статичних сайтів). Варіанти безкоштовного/дешевого хостингу Node.js із постійним диском для SQLite:
-
-- [Railway](https://railway.app) — деплой прямо з GitHub-репозиторію
-- [Render](https://render.com) — web service + persistent disk для `data.db`
-- [Fly.io](https://fly.io) — volume для бази
-
-Команда деплою: build — `npm run build`, start — `NODE_ENV=production node dist/index.cjs`. Порт: 5000 (або задати через `PORT`).
+Фронтенд повністю статичний (`dist/public`), тому його можна розмістити безкоштовно будь-де: GitHub Pages (репозиторій має бути публічним на безкоштовному тарифі), Netlify, Cloudflare Pages тощо. Бекенд і дані живуть у Google (Apps Script + Таблиця) — окремий сервер не потрібен.
