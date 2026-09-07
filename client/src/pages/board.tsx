@@ -48,8 +48,82 @@ import {
   Send,
   LogOut,
   Lock,
+  Flag,
+  CalendarDays,
+  AlertTriangle,
 } from "lucide-react";
-import { ASSIGNEES, BLOCKS, type Task, type Note } from "@shared/schema";
+import { ASSIGNEES, BLOCKS, PRIORITIES, type Task, type Note } from "@shared/schema";
+
+// ---------- priority helpers ----------
+
+const PRIORITY_META: Record<
+  string,
+  { label: string; textClass: string; bgClass: string; border: string; order: number }
+> = {
+  high: {
+    label: "Високий",
+    textClass: "text-[hsl(0,80%,72%)]",
+    bgClass: "bg-[hsl(0,60%,20%)]",
+    border: "border-[hsl(0,60%,30%)]",
+    order: 0,
+  },
+  medium: {
+    label: "Середній",
+    textClass: "text-[hsl(38,90%,68%)]",
+    bgClass: "bg-[hsl(38,50%,18%)]",
+    border: "border-[hsl(38,50%,28%)]",
+    order: 1,
+  },
+  low: {
+    label: "Низький",
+    textClass: "text-[hsl(200,50%,70%)]",
+    bgClass: "bg-[hsl(220,20%,18%)]",
+    border: "border-[hsl(220,20%,28%)]",
+    order: 2,
+  },
+};
+
+function formatDue(iso?: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(d);
+  target.setHours(0, 0, 0, 0);
+  const diffDays = Math.round(
+    (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  const label = new Intl.DateTimeFormat("uk-UA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  }).format(d);
+  return { label, diffDays };
+}
+
+function dueTone(diffDays: number, status: string) {
+  if (status === "done") return "text-muted-foreground";
+  if (diffDays < 0) return "text-[hsl(0,80%,72%)]";
+  if (diffDays <= 1) return "text-[hsl(38,90%,68%)]";
+  return "text-muted-foreground";
+}
+
+function toDateInput(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fromDateInput(v: string) {
+  if (!v) return null;
+  const d = new Date(v + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 // ---------- constants ----------
 
@@ -163,6 +237,8 @@ const createSchema = z.object({
   title: z.string().min(1, "Вкажіть заголовок задачі"),
   description: z.string(),
   assignee: z.enum(ASSIGNEES),
+  priority: z.enum(PRIORITIES),
+  dueDate: z.string(),
 });
 
 type CreateValues = z.infer<typeof createSchema>;
@@ -189,12 +265,17 @@ function CreateTaskDialog({
       title: "",
       description: "",
       assignee: defaultAssignee,
+      priority: "medium",
+      dueDate: "",
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (values: CreateValues) =>
-      gs("createTask", values),
+      gs("createTask", {
+        ...values,
+        dueDate: fromDateInput(values.dueDate),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast({ title: "Задачу додано" });
@@ -203,6 +284,8 @@ function CreateTaskDialog({
         title: "",
         description: "",
         assignee: defaultAssignee,
+        priority: "medium",
+        dueDate: "",
       });
       onClose();
     },
@@ -287,6 +370,52 @@ function CreateTaskDialog({
                 </FormItem>
               )}
             />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="priority"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Пріоритет</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-task-priority">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {PRIORITIES.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            <span className="flex items-center gap-2">
+                              <Flag
+                                className={`h-3.5 w-3.5 ${PRIORITY_META[p].textClass}`}
+                              />
+                              {PRIORITY_META[p].label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="dueDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Дедлайн</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        data-testid="input-task-due"
+                        {...field}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </div>
             <Button
               type="submit"
               className="w-full"
@@ -407,8 +536,8 @@ function TaskDetailDialog({
           </div>
         </div>
 
-        <div className="flex items-end gap-3">
-          <div className="flex-1">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
             <p className="mb-1.5 text-xs font-medium text-muted-foreground">
               Відповідальний
             </p>
@@ -431,6 +560,58 @@ function TaskDetailDialog({
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              Пріоритет
+            </p>
+            <Select
+              value={task.priority ?? "medium"}
+              onValueChange={(v) => patchMutation.mutate({ priority: v })}
+            >
+              <SelectTrigger data-testid="select-detail-priority">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITIES.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    <span className="flex items-center gap-2">
+                      <Flag className={`h-3.5 w-3.5 ${PRIORITY_META[p].textClass}`} />
+                      {PRIORITY_META[p].label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="col-span-2">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              Дедлайн
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="date"
+                value={toDateInput(task.dueDate)}
+                onChange={(e) =>
+                  patchMutation.mutate({ dueDate: fromDateInput(e.target.value) })
+                }
+                data-testid="input-detail-due"
+              />
+              {task.dueDate ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => patchMutation.mutate({ dueDate: null })}
+                  data-testid="button-clear-due"
+                >
+                  Прибрати
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2">
           {task.status === "active" ? (
             <Button
               onClick={() => patchMutation.mutate({ status: "done" })}
@@ -556,35 +737,62 @@ function TaskDetailDialog({
 
 function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   const done = task.status === "done";
+  const priority = task.priority ?? "medium";
+  const pmeta = PRIORITY_META[priority];
+  const due = formatDue(task.dueDate);
+  const overdue = !done && due && due.diffDays < 0;
   return (
     <button
       onClick={onOpen}
-      className="hover-elevate active-elevate-2 w-full rounded-lg border border-card-border bg-card p-4 text-left transition-colors"
+      className={`hover-elevate active-elevate-2 w-full rounded-lg border bg-card p-4 text-left transition-colors ${
+        overdue ? "border-[hsl(0,60%,35%)]" : "border-card-border"
+      }`}
       data-testid={`card-task-${task.id}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p
-          className={`text-sm font-medium leading-snug ${
-            done ? "text-muted-foreground line-through" : ""
-          }`}
-          data-testid={`text-task-title-${task.id}`}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span
+          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${pmeta.textClass} ${pmeta.bgClass} ${pmeta.border}`}
+          data-testid={`badge-priority-${task.id}`}
         >
-          {task.title}
-        </p>
+          <Flag className="h-2.5 w-2.5" />
+          {pmeta.label}
+        </span>
         {done ? (
           <CheckCircle2 className="h-4 w-4 shrink-0 text-[hsl(160,70%,55%)]" />
         ) : (
           <Clock className="h-4 w-4 shrink-0 text-primary/70" />
         )}
       </div>
+      <p
+        className={`text-sm font-medium leading-snug ${
+          done ? "text-muted-foreground line-through" : ""
+        }`}
+        data-testid={`text-task-title-${task.id}`}
+      >
+        {task.title}
+      </p>
       <div className="mt-3 flex items-center gap-2">
         <AssigneeAvatar name={task.assignee} size={22} />
         <span className="text-xs text-muted-foreground" data-testid={`text-task-assignee-${task.id}`}>
           {task.assignee}
         </span>
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
-          {formatDate(done ? task.completedAt : task.createdAt)}
-        </span>
+        {due ? (
+          <span
+            className={`ml-auto inline-flex items-center gap-1 font-mono text-[11px] ${dueTone(due.diffDays, task.status)}`}
+            data-testid={`text-task-due-${task.id}`}
+          >
+            {overdue ? (
+              <AlertTriangle className="h-3 w-3" />
+            ) : (
+              <CalendarDays className="h-3 w-3" />
+            )}
+            {due.label}
+          </span>
+        ) : (
+          <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
+            {formatDate(done ? task.completedAt : task.createdAt)}
+          </span>
+        )}
       </div>
     </button>
   );
@@ -736,10 +944,21 @@ function BoardContent({
 
   const openedTask = tasks?.find((t) => t.id === openedId) ?? null;
 
-  const visible = (block: string) =>
-    (tasks ?? []).filter(
-      (t) => t.block === block && (filter === "all" || t.status === filter)
+  const visible = (block: string) => {
+    const items = (tasks ?? []).filter(
+      (t) => t.block === block && (filter === "all" || t.status === filter),
     );
+    return items.slice().sort((a, b) => {
+      if (a.status !== b.status) return a.status === "done" ? 1 : -1;
+      const pa = PRIORITY_META[a.priority ?? "medium"]?.order ?? 1;
+      const pb = PRIORITY_META[b.priority ?? "medium"]?.order ?? 1;
+      if (pa !== pb) return pa - pb;
+      const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+      const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+      if (da !== db) return da - db;
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
+  };
 
   const counts = {
     all: tasks?.length ?? 0,

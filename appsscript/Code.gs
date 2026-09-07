@@ -11,8 +11,14 @@ function db_() {
     ss = SpreadsheetApp.create('Дошка задач — дані');
     p.setProperty('SS_ID', ss.getId());
     const t = ss.getSheets()[0]; t.setName('Tasks');
-    t.appendRow(['id','block','title','description','assignee','status','createdAt','completedAt']);
+    t.appendRow(['id','block','title','description','assignee','status','createdAt','completedAt','priority','dueDate']);
     ss.insertSheet('Notes').appendRow(['id','taskId','author','text','createdAt']);
+  }
+  // migrate: ensure Tasks has priority + dueDate columns
+  const _tsheet = ss.getSheetByName('Tasks');
+  if (_tsheet && _tsheet.getLastColumn() < 10) {
+    if (_tsheet.getLastColumn() < 9) _tsheet.getRange(1, 9).setValue('priority');
+    if (_tsheet.getLastColumn() < 10) _tsheet.getRange(1, 10).setValue('dueDate');
   }
   return ss;
 }
@@ -26,7 +32,7 @@ function nextId_(key) {
 
 function rows_(sh) { const v = sh.getDataRange().getValues(); v.shift(); return v; }
 function iso_(v) { if (!v) return null; if (v instanceof Date) return v.toISOString(); return String(v); }
-function task_(r) { return { id: Number(r[0]), block: String(r[1]), title: String(r[2]), description: String(r[3] || ''), assignee: String(r[4]), status: String(r[5]), createdAt: iso_(r[6]), completedAt: iso_(r[7]) }; }
+function task_(r) { return { id: Number(r[0]), block: String(r[1]), title: String(r[2]), description: String(r[3] || ''), assignee: String(r[4]), status: String(r[5]), createdAt: iso_(r[6]), completedAt: iso_(r[7]), priority: String(r[8] || 'medium'), dueDate: iso_(r[9]) }; }
 function note_(r) { return { id: Number(r[0]), taskId: Number(r[1]), author: String(r[2]), text: String(r[3]), createdAt: iso_(r[4]) }; }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
@@ -47,7 +53,7 @@ function doPost(e) {
         return out_({ data: rows_(T).map(task_) });
       case 'createTask': {
         const id = nextId_('TASK_ID');
-        T.appendRow([id, b.block, b.title, b.description || '', b.assignee, 'active', new Date().toISOString(), '']);
+        T.appendRow([id, b.block, b.title, b.description || '', b.assignee, 'active', new Date().toISOString(), '', b.priority || 'medium', b.dueDate || '']);
         return out_({ data: { id } });
       }
       case 'updateTask': {
@@ -61,6 +67,8 @@ function doPost(e) {
               T.getRange(i + 1, 6).setValue(b.status);
               T.getRange(i + 1, 8).setValue(b.status === 'done' ? new Date().toISOString() : '');
             }
+            if (b.priority !== undefined) T.getRange(i + 1, 9).setValue(b.priority);
+            if (b.dueDate !== undefined) T.getRange(i + 1, 10).setValue(b.dueDate || '');
             return out_({ data: { ok: true } });
           }
         }

@@ -4,6 +4,7 @@ import { z } from "zod";
 export const BLOCKS = ["allazs", "soda", "other"] as const;
 export const ASSIGNEES = ["Стас", "Олег", "Рома", "Саша", "Давід", "Вова"] as const;
 export const STATUSES = ["active", "done"] as const;
+export const PRIORITIES = ["low", "medium", "high"] as const;
 
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -14,6 +15,8 @@ export const tasks = sqliteTable("tasks", {
   status: text("status", { enum: STATUSES }).notNull().default("active"),
   createdAt: text("created_at").notNull(),
   completedAt: text("completed_at"),
+  priority: text("priority", { enum: PRIORITIES }).notNull().default("medium"),
+  dueDate: text("due_date"),
 });
 
 export const notes = sqliteTable("notes", {
@@ -29,6 +32,8 @@ export const insertTaskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional().transform((v) => v ?? ""),
   assignee: z.enum(ASSIGNEES),
+  priority: z.enum(PRIORITIES).optional(),
+  dueDate: z.string().optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -36,6 +41,8 @@ export const updateTaskSchema = z.object({
   description: z.string().optional(),
   assignee: z.enum(ASSIGNEES).optional(),
   status: z.enum(STATUSES).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  dueDate: z.string().nullable().optional(),
 });
 
 export const insertNoteSchema = z.object({
