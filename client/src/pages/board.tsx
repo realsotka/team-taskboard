@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, setBoardPin } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -42,8 +42,11 @@ import {
   CheckCircle2,
   Fuel,
   Sparkles,
+  Layers,
   MessageSquare,
   Send,
+  LogOut,
+  Lock,
 } from "lucide-react";
 import { ASSIGNEES, BLOCKS, type Task, type Note } from "@shared/schema";
 
@@ -55,6 +58,7 @@ const BLOCK_META: Record<
 > = {
   allazs: { label: "AllAzs", icon: Fuel, dot: "bg-[hsl(263,84%,68%)]" },
   soda: { label: "Soda Cleaning", icon: Sparkles, dot: "bg-[hsl(290,70%,65%)]" },
+  other: { label: "Інше", icon: Layers, dot: "bg-[hsl(173,58%,55%)]" },
 };
 
 const ASSIGNEE_COLORS: Record<string, string> = {
@@ -165,20 +169,25 @@ type CreateValues = z.infer<typeof createSchema>;
 function CreateTaskDialog({
   open,
   block,
+  currentUser,
   onClose,
 }: {
   open: boolean;
   block: string;
+  currentUser: string;
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const defaultAssignee = (ASSIGNEES as readonly string[]).includes(currentUser)
+    ? (currentUser as CreateValues["assignee"])
+    : "Стас";
   const form = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
     defaultValues: {
       block: block as CreateValues["block"],
       title: "",
       description: "",
-      assignee: "Стас",
+      assignee: defaultAssignee,
     },
   });
 
@@ -192,7 +201,7 @@ function CreateTaskDialog({
         block: block as CreateValues["block"],
         title: "",
         description: "",
-        assignee: "Стас",
+        assignee: defaultAssignee,
       });
       onClose();
     },
@@ -297,9 +306,11 @@ function CreateTaskDialog({
 
 function TaskDetailDialog({
   task,
+  currentUser,
   onClose,
 }: {
   task: Task | null;
+  currentUser: string;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -326,7 +337,7 @@ function TaskDetailDialog({
   const noteMutation = useMutation({
     mutationFn: async () =>
       apiRequest("POST", `/api/tasks/${taskId}/notes`, {
-        author: noteAuthor || task?.assignee || "Стас",
+        author: noteAuthor || currentUser,
         text: noteText.trim(),
       }),
     onSuccess: () => {
@@ -485,7 +496,7 @@ function TaskDetailDialog({
           <div className="mt-4 space-y-2">
             <div className="flex gap-2">
               <Select
-                value={noteAuthor || task.assignee}
+                value={noteAuthor || currentUser}
                 onValueChange={setNoteAuthor}
               >
                 <SelectTrigger className="w-32" data-testid="select-note-author">
@@ -576,9 +587,140 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   );
 }
 
+// ---------- login ----------
+
+function LoginScreen({
+  onSuccess,
+}: {
+  onSuccess: (user: string, pin: string) => void;
+}) {
+  const [name, setName] = useState<string | null>(null);
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+
+  const submit = async () => {
+    if (!name || !pin) return;
+    setPending(true);
+    setError("");
+    try {
+      await apiRequest("POST", "/api/auth", { pin });
+      onSuccess(name, pin);
+    } catch {
+      setError("Невірний PIN. Спробуйте ще раз.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6">
+        <div className="flex flex-col items-center text-center">
+          <Logo />
+          <h1 className="font-display mt-3 text-xl font-bold">Дошка задач</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            AllAzs · Soda Cleaning · Інше
+          </p>
+        </div>
+
+        <p className="mt-6 mb-2 text-xs font-medium text-muted-foreground">
+          Хто ви?
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {ASSIGNEES.map((a) => (
+            <button
+              key={a}
+              onClick={() => setName(a)}
+              className={`flex flex-col items-center gap-1.5 rounded-lg border p-2.5 transition-colors ${
+                name === a
+                  ? "border-primary bg-accent"
+                  : "border-border bg-muted/30 hover:border-primary/40"
+              }`}
+              data-testid={`login-user-${a}`}
+            >
+              <AssigneeAvatar name={a} size={28} />
+              <span className="text-xs">{a}</span>
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-5 mb-2 text-xs font-medium text-muted-foreground">
+          PIN-код команди
+        </p>
+        <div className="relative">
+          <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => {
+              setPin(e.target.value);
+              setError("");
+            }}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="••••"
+            className="pl-9 tracking-[0.3em]"
+            data-testid="input-pin"
+          />
+        </div>
+        {error && (
+          <p className="mt-2 text-xs text-destructive" data-testid="text-pin-error">
+            {error}
+          </p>
+        )}
+
+        <Button
+          className="mt-4 w-full"
+          onClick={submit}
+          disabled={!name || !pin || pending}
+          data-testid="button-login"
+        >
+          Увійти
+        </Button>
+        <p className="mt-3 text-center text-[11px] text-muted-foreground">
+          Доступ лише для команди
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ---------- board ----------
 
 export default function Board() {
+  const [user, setUser] = useState<string | null>(null);
+
+  if (!user) {
+    return (
+      <LoginScreen
+        onSuccess={(name, pin) => {
+          setBoardPin(pin);
+          setUser(name);
+        }}
+      />
+    );
+  }
+
+  return (
+    <BoardContent
+      user={user}
+      onLogout={() => {
+        setBoardPin("");
+        queryClient.clear();
+        setUser(null);
+      }}
+    />
+  );
+}
+
+function BoardContent({
+  user,
+  onLogout,
+}: {
+  user: string;
+  onLogout: () => void;
+}) {
   const [filter, setFilter] = useState<Filter>("all");
   const [createBlock, setCreateBlock] = useState<string | null>(null);
   const [openedId, setOpenedId] = useState<number | null>(null);
@@ -612,7 +754,7 @@ export default function Board() {
                 Дошка задач
               </h1>
               <p className="text-xs text-muted-foreground">
-                AllAzs · Soda Cleaning
+                AllAzs · Soda Cleaning · Інше
               </p>
             </div>
           </div>
@@ -633,11 +775,28 @@ export default function Board() {
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 rounded-full border border-border bg-card py-1 pl-1 pr-2.5">
+              <AssigneeAvatar name={user} size={20} />
+              <span className="text-xs" data-testid="text-current-user">
+                {user}
+              </span>
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={onLogout}
+              aria-label="Вийти"
+              data-testid="button-logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           {Object.entries(BLOCK_META).map(([key, meta]) => {
             const list = visible(key);
             const Icon = meta.icon;
@@ -714,10 +873,15 @@ export default function Board() {
         <CreateTaskDialog
           open={!!createBlock}
           block={createBlock}
+          currentUser={user}
           onClose={() => setCreateBlock(null)}
         />
       )}
-      <TaskDetailDialog task={openedTask} onClose={() => setOpenedId(null)} />
+      <TaskDetailDialog
+        task={openedTask}
+        currentUser={user}
+        onClose={() => setOpenedId(null)}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 
-export const BLOCKS = ["allazs", "soda"] as const;
+export const BLOCKS = ["allazs", "soda", "other"] as const;
 export const ASSIGNEES = ["Стас", "Олег", "Рома", "Саша", "Давід", "Вова"] as const;
 export const STATUSES = ["active", "done"] as const;
 

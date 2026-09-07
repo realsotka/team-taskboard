@@ -3,7 +3,22 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { insertTaskSchema, updateTaskSchema, insertNoteSchema } from "@shared/schema";
 
+const BOARD_PIN = process.env.BOARD_PIN || "2026";
+
 export function registerRoutes(httpServer: Server, app: Express) {
+  app.post("/api/auth", (req, res) => {
+    const pin = String(req.body?.pin ?? "");
+    if (pin === BOARD_PIN) return res.json({ ok: true });
+    res.status(401).json({ error: "Невірний PIN" });
+  });
+
+  // All other /api routes require the PIN header
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/auth") return next();
+    if (req.headers["x-board-pin"] === BOARD_PIN) return next();
+    res.status(401).json({ error: "Потрібна авторизація" });
+  });
+
   app.get("/api/tasks", async (_req, res) => {
     const tasks = await storage.getTasks();
     res.json(tasks);
