@@ -456,7 +456,7 @@ function TaskDetailDialog({
   });
 
   const patchMutation = useMutation({
-    mutationFn: async (patch: Record<string, string>) =>
+    mutationFn: async (patch: Record<string, string | null>) =>
       gs("updateTask", { id: taskId, ...patch }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
